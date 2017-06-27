@@ -394,6 +394,15 @@ sum(parted_testing$classe == parted_testing$pred_rf)
 ```
 ## [1] 5873
 ```
+
+```r
+# Alternative way of calculating the expected out of sample error:
+1 - (sum(parted_testing$classe == parted_testing$pred_rf)/dim(parted_testing)[1])
+```
+
+```
+## [1] 0.002039082
+```
   
 ## Conclusion  
 In conclusion, this report concluded to stay with the rf model as the final model (with the accuracy of 0.9963), although the ensemble stacked model using treebag had the accuracy of 1. The decision was based on when prediction was done on the parted_testing data set, and as the predictions' results were exactly the same for both rf and ensembled method. Below, the rf model is used on the original testing dataset and the 20 predections of the "classe" type were all correct.  

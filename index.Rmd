@@ -2,7 +2,9 @@
 title: "Practical Machine Learning Course Project"
 author: "Pouria Tabrizi"
 date: "06/26/2017"
-output: html_document
+output:
+  html_document:
+    keep_md: yes
 ---
   
 ## Executive Summary  
@@ -105,7 +107,7 @@ train_control <- trainControl(method = "cv", number = 10, savePredictions = 'fin
 ```
   
 ## Model Building  
-At this stage, there are going to be ten trained models and the goal is to locate the top Accuracy percentage models, after resampling them. The top Accuracy percentage models are, ensemble_stacked_highs_treebag, fitrf, fittreebag, fitgbm, and fitknn, respectively (looking at summary and dotplot of resampled2). The selected model is rffit with Mean Accuracy of 0.9963.  
+At this stage, there are going to be ten trained models and the goal is to locate the top Accuracy percentage models, after resampling them. The top Accuracy percentage models are, ensemble_stacked_highs_treebag, fitrf, fittreebag, fitgbm, and fitknn, respectively (looking at summary and dotplot of resampled2). The selected model is rffit with Mean Accuracy of 0.9971.  
 ```{r modelSelection1, echo=TRUE, cache=TRUE, warning=FALSE}
 # 1.Linear Discriminant Analysis Model - Classification
 set.seed(1234)
@@ -149,7 +151,7 @@ By running the modelCor() fucntion from the caret package, the goal is to find t
 modelCor(resampled)
 ```
   
-Performing ensemble stacking methods using knn and rf as base loayers and treebag as the top layer, the highest mean accuracy of rf (0.9963) has been increased to 1 (100%).  Yet, as it will be illustrated in the upcoming steps, although the ensemble is with Accuracy of 1, yet when prediction is being applied to the parted_testing data set, the results for both models of rf and ensemble one is the same. Therefore, the selected model is still rf.  
+Performing ensemble stacking methods using knn and rf as base loayers and treebag as the top layer, the highest mean accuracy of rf (0.9971) has been increased to 1 (100%).  Yet, as it will be illustrated in the upcoming steps, although the ensemble is with Accuracy of 1, yet when prediction is being applied to the parted_testing data set, the results for both models of rf and ensemble one is the same. Therefore, the selected model is still rf.  
 ```{r modelSelection2, echo=TRUE, cache=TRUE}
 parted_training$pred_lda <- predict(fitlda, parted_training[, predictors])
 parted_training$pred_rpart <- predict(fitrpart, parted_training[, predictors])
@@ -198,6 +200,8 @@ The expected out of sample error is lower for rf in comparison to knn.
 sum(parted_testing$classe == parted_testing$pred_knn)
 table(parted_testing$classe, parted_testing$pred_rf)
 sum(parted_testing$classe == parted_testing$pred_rf)
+# Alternative way of calculating the expected out of sample error:
+1 - (sum(parted_testing$classe == parted_testing$pred_rf)/dim(parted_testing)[1])
 ```
   
 ## Conclusion  
