@@ -1,15 +1,16 @@
 ---
 title: "Practical Machine Learning Course Project"
 author: "Pouria Tabrizi"
-date: "6/8/2017"
+date: "06/26/2017"
 output: html_document
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r downloadfiles, echo=TRUE, cache=TRUE}
+  
+## Executive Summary  
+This report is using the data from accelerometers on the belt, forearm, arm, and dumbell of six participants, obtained from the two below links (for training and testing sets). With the ultimate goal of being able to build model/s to predict the 20 cases in the testing file to find out in what manner the participants performed the exercises ("A", "B", "C", "D", "E").
+  
+## Downloading and Reading Files  
+Downloding and reading the training and testing files.  
+```{r downloadFiles, echo=TRUE, cache=TRUE}
 # training data set
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "./training.csv", method = "curl")
 
@@ -17,27 +18,192 @@ download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.
 download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "./testing.csv", method = "curl")
 
 # reading training data set
-training = read.csv("./training.csv")
+training = read.csv("./training.csv", stringsAsFactors = FALSE)
 # reading testing data set
-testing = read.csv("./testing.csv")
+testing = read.csv("./testing.csv", stringsAsFactors = FALSE)
+dim(training)
+dim(testing)
+```
+  
+## Tidy Data Set  
+  
+The first function (fun1), creates a data frame with three columns, showing the sum of three types of missing values - #DIV/0!, "", and NA -, respectively for each row. Through some exploratory data analysis, it is clear that, there are 100 columns that have 19216 or above missing values, this equals to 98% and above for some of these columns. The percentage of missing or empty values for these 100 columns is very high, thereby the conclusion is to completely exclude these columns from the models.  
+```{r SumOfMissingValueTypes, echo=TRUE, cache=TRUE, warning=FALSE}
+library(caret)
+library(ggplot2)
+sum(is.na(training))
+fun1 <- function(a) {
+    divValue <- as.character(); emptyValue <- as.character()
+    naValue <- as.character(); combineValue <- data.frame()
+    for(i in 1:dim(a)[2]) {
+        divValue <- append(divValue, sum(a[, i] == "#DIV/0!"))
+        emptyValue <- append(emptyValue, sum(a[, i] == ""))
+        naValue <- append(naValue, sum(is.na(a[, i]) > 0))
+    }
+    combineValue <- cbind("divvalue" = divValue, 
+                  "emptyvalue" = emptyValue,
+                  "navalue" = naValue)
+    return(combineValue)
+}
+shunValues <- as.data.frame(fun1(training))
+# Displaying the look and correlation of such columns
+shunValues[70:76, ]
+```
+  
+The below function (fun2), will return the indices of all the columns with the above mentioned three missing values.  
+```{r removingMissingValues, echo=TRUE, cache=TRUE}
+fun2 <- function(a) {
+    nacol <- as.character()
+    for(i in 1:dim(a)[2]) {
+        if(sum(is.na(a[, i])) > 0 || sum(a[, i] == "") > 0 
+           || sum(a[, i] == "#DIV/0!") > 0) {
+            nacol <- append(nacol, names(a[i]))
+        }
+    }
+    b <- which(names(training) %in% nacol)
+    return(b)
+}
+naCols <- fun2(training)
+```
+  
+## Feature Variable Selection  
+
+Creating outcome and predictors vectors to be used for building models. outcome contains the name of the variable "classe" and predictors contains the names for the remaining variables.  
+```{r outcomePredictors, echo=TRUE, cache=TRUE}
+outcome <- 'classe'
+temp <- names(training[-naCols])
+tempPredictors <- temp[-c(1:6,60)]
+```
+  
+There are still plenty of variables (53) to work with, thus the goal is to use Recursive Partitioning and Regression Trees (rpart) method, alongside cross validation (trainControl() function) to decrease the number of variables before building the models. The top variables count comes out to 14.  
+```{r featureSelection, echo =TRUE, cache=TRUE}
+library(rpart)
+set.seed(678)
+featureControl <- trainControl("cv", number = 10)
+featureSelection <- train(training[, tempPredictors], training[, outcome], method = "rpart", trControl = featureControl)
+featureImportance <- varImp(featureSelection)
+plot(featureImportance, top = 16)
+# Saving the top variables to the predictors vector
+predictors <- rownames(featureImportance$importance)[order(featureImportance$importance[,1], decreasing = TRUE)[1:14]]
+```
+  
+## Data Partition
+In this step, the training data is being divided to two seperate data sets for training and testing purposes, with conservation of the same 14 featured variables and the outcome variable of "classe".
+```{r dataPartition, echo=TRUE, cache=TRUE}
+inTrain <- createDataPartition(y = training$classe, p = 0.7, list = FALSE)
+parted_training <- training[inTrain, c(predictors,outcome)]
+parted_testing <- training[-inTrain, c(predictors,outcome)]
+dim(parted_training)
+dim(parted_testing)
+```
+  
+## Cross Validation  
+By scaling down from the total of 160 variables to 14, and dividing the main training data set to two data sets of parted_training and parted_testing, now it would be an ideal time to build the models. Before, building the models, this report would perform cross validation by defining trainControl(), with 10-fold cross validation.  
+```{r crossValidation, echo=TRUE, cache=TRUE}
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10, savePredictions = 'final', classProbs = TRUE)
+```
+  
+## Model Building  
+At this stage, there are going to be ten trained models and the goal is to locate the top Accuracy percentage models, after resampling them. The top Accuracy percentage models are, ensemble_stacked_highs_treebag, fitrf, fittreebag, fitgbm, and fitknn, respectively (looking at summary and dotplot of resampled2). The selected model is rffit with Mean Accuracy of 0.9963.  
+```{r modelSelection1, echo=TRUE, cache=TRUE, warning=FALSE}
+# 1.Linear Discriminant Analysis Model - Classification
+set.seed(1234)
+fitlda <- train(parted_training[, predictors], parted_training[, outcome], method = "lda", trControl = train_control)
+
+# 2.Recursive Partitioning and Regression Trees Model - Classification, Regression
+set.seed(1234)
+fitrpart <- train(parted_training[, predictors], parted_training[, outcome], method = "rpart", trControl = train_control)
+
+# 3.k-Nearest Neighbours Model - Classification, Regression
+set.seed(1234)
+fitknn <- train(parted_training[, predictors], parted_training[, outcome], method = "knn", trControl = train_control)
+
+# 4.Stochastic Gradient Boosting Model - Classification, Regression
+# long buffering is expected
+set.seed(1234)
+fitgbm <- train(parted_training[, predictors], parted_training[, outcome], method = "gbm", trControl = train_control, verbose = FALSE)
+
+# 5.Random Forest Model - Classification, Regression
+# longer buffering is expected
+set.seed(1234)
+fitrf <- train(parted_training[, predictors], parted_training[, outcome], method = "rf", trControl = train_control, ntree = 500)
+
+# 6.treebag Model - Classification, Regression
+set.seed(1234)
+fittreebag <- train(parted_training[, predictors], parted_training[, outcome], method = "treebag", trControl = train_control)
+
+# 7.Support Vector Machines with Radial Basis Function Kernel Model - Classification, Regression
+# much longer buffering is expected
+set.seed(1234)
+fitsvmradial <- train(parted_training[, predictors], parted_training[, outcome], method = "svmRadial", trControl = train_control)
+
+# Resampling the models
+set.seed(1234)
+resampled <- resamples(list(lda = fitlda, rpart = fitrpart, knn = fitknn, gbm = fitgbm, rf = fitrf, treebag = fittreebag, svmradial = fitsvmradial))
+summary(resampled)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+By running the modelCor() fucntion from the caret package, the goal is to find the lowest correlation between the already built models in the previous stage. The correlation is at its lowest between knn and rf Therefore, the base layer models for the stacking ensemble are fitknn and fitrf. 
+```{r modelCorrelation, echo=TRUE, cache=TRUE}
+modelCor(resampled)
 ```
+  
+Performing ensemble stacking methods using knn and rf as base loayers and treebag as the top layer, the highest mean accuracy of rf (0.9963) has been increased to 1 (100%).  Yet, as it will be illustrated in the upcoming steps, although the ensemble is with Accuracy of 1, yet when prediction is being applied to the parted_testing data set, the results for both models of rf and ensemble one is the same. Therefore, the selected model is still rf.  
+```{r modelSelection2, echo=TRUE, cache=TRUE}
+parted_training$pred_lda <- predict(fitlda, parted_training[, predictors])
+parted_training$pred_rpart <- predict(fitrpart, parted_training[, predictors])
+parted_training$pred_knn <- predict(fitknn, parted_training[, predictors])
+parted_training$pred_rf <- predict(fitrf, parted_training[, predictors])
 
-## Including Plots
+predictors_highs_models <- c('pred_knn', 'pred_rf')
+predictors_lows_models <- c('pred_lda', 'pred_rpart')
 
-You can also embed plots, for example:
+# 8. Ensemble Stacked Model - treebag
+set.seed(1234)
+ensemble_stacked_highs_treebag <- train(parted_training[, predictors_highs_models], parted_training[, outcome], method = "treebag", trControl = train_control)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# 9. Ensemble Stacked Model - rpart
+set.seed(1234)
+ensemble_stacked_highs_rpart <- train(parted_training[, predictors_highs_models], parted_training[, outcome], method = "rpart", trControl = train_control)
+
+# 10. Ensemble Stacked Model - treebag
+set.seed(1234)
+ensemble_stacked_lows_treebag <- train(parted_training[, predictors_lows_models], parted_training[, outcome], method = "treebag", trControl = train_control)
+
+# Resampling all the models
+set.seed(1234)
+resampled2 <- resamples(list(lda = fitlda, rpart = fitrpart, knn = fitknn, gbm = fitgbm, rf = fitrf, treebag = fittreebag, svmradial = fitsvmradial, stacked_highs_treebag = ensemble_stacked_highs_treebag, stacked_highs_rpart = ensemble_stacked_highs_rpart, stacked_lows_treebag = ensemble_stacked_lows_treebag))
+summary(resampled2)
+dotplot(resampled2)
 ```
+  
+## Making Predictions for parted_testing Data Set
+The selected model of ensemble_stacked_highs_treebag.  
+```{r SelectedModelPrediction, echo=TRUE, cache=TRUE}
+parted_testing$pred_knn <- predict(fitknn, parted_testing[, predictors])
+parted_testing$pred_rf <- predict(fitrf, parted_testing[, predictors])
+parted_testing$pred_stacked_treebag <- predict(ensemble_stacked_highs_treebag, parted_testing[, predictors_highs_models])
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+confusionMatrix(parted_testing$classe, parted_testing$pred_knn)$overall['Accuracy']
+confusionMatrix(parted_testing$classe, parted_testing$pred_stacked_treebag)$overall['Accuracy']
+confusionMatrix(parted_testing$pred_rf, parted_testing$pred_stacked_treebag)$overall['Accuracy']
+confusionMatrix(parted_testing$classe, parted_testing$pred_rf)$overall['Accuracy']
+```
+  
+## Expected Out of Sample Error
+The expected out of sample error is lower for rf in comparison to knn.  
+```{r sampleError, echo=TRUE, cache=TRUE}
+sum(parted_testing$classe == parted_testing$pred_knn)
+table(parted_testing$classe, parted_testing$pred_rf)
+sum(parted_testing$classe == parted_testing$pred_rf)
+```
+  
+## Conclusion  
+In conclusion, this report concluded to stay with the rf model as the final model (with the accuracy of 0.9963), although the ensemble stacked model using treebag had the accuracy of 1. The decision was based on when prediction was done on the parted_testing data set, and as the predictions' results were exactly the same for both rf and ensembled method. Below, the rf model is used on the original testing dataset and the 20 predections of the "classe" type were all correct.  
+
+Using the rf model to predict the "classe" type, for the original testing data set.  
+```{r testingPrediction, echo=TRUE, cache=TRUE}
+testing$pred_rf <- predict(fitrf, testing[, predictors])
+```
